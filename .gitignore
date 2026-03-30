@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment variables (SENSITIVE — never commit)
+.env
+.env.local
+.env.production
+
+# Baileys auth sessions (contains WhatsApp credentials)
+auth_sessions/
+auth_sessions_v2/
+test_auth_standalone/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Debug/test files
+test-baileys*.cjs
+test-baileys*.mjs
+backend_*.log
