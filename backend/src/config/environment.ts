@@ -4,8 +4,8 @@ import path from 'path';
 dotenv.config({ path: path.join(process.cwd(), '.env') });
 
 export const config = {
-  PORT: parseInt(process.env.PORT || '3002', 10),
-  FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:5173',
+  PORT: parseInt(process.env.PORT || '3005', 10),
+  FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:3004',
   NODE_ENV: process.env.NODE_ENV || 'development',
 
   // Supabase
@@ -17,7 +17,7 @@ export const config = {
   GITHUB_PAT: process.env.GITHUB_PAT || '',
 
   // Baileys auth sessions directory
-  AUTH_SESSIONS_DIR: process.env.AUTH_SESSIONS_DIR || './auth_sessions',
+  AUTH_SESSIONS_DIR: process.env.AUTH_SESSIONS_DIR || './auth_sessions_v2',
 };
 
 // Validate critical env vars

@@ -7,7 +7,7 @@ A multi-tenant AI-powered WhatsApp Sales Assistant SaaS that automatically handl
 ```
 ┌──────────────────────────────┐     ┌─────────────────────────────────┐
 │   Frontend (Vite + React)    │     │    Backend (Fastify + Node)     │
-│   Port: 3003                 │────▶│    Port: 3005                   │
+│   Port: 3004                 │────▶│    Port: 3005                   │
 │                              │     │                                 │
 │  • Dashboard                 │     │  • Session Manager (Baileys)    │
 │  • QR Scanner                │     │  • AI Pipeline (GPT-4o)         │
@@ -65,7 +65,7 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 GITHUB_PAT=your-github-pat-for-ai
 AUTH_SESSIONS_DIR=./auth_sessions_v2/
-FRONTEND_URL=http://localhost:3003
+FRONTEND_URL=http://localhost:3004
 NODE_ENV=development
 ```
 

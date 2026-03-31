@@ -1,0 +1,5 @@
+Car Name,Make,Model,Year,Fuel Type,Transmission,Kilometers Driven,Ownership,Price INR,max_discount_percent,min_price,Color,Registration City,Features,Image URL 1,Image URL 2
+Maruti Swift VXI,Maruti,Swift,2018,Petrol,Manual,62300,2nd Owner,500000,6,470000,Silver,Pune,"Bluetooth Audio, ABS, Dual Airbags",https://picsum.photos/seed/swift-front/1200/800,https://picsum.photos/seed/swift-side/1200/800
+Hyundai i20 Sportz,Hyundai,i20,2019,Petrol,Manual,48500,1st Owner,680000,5,650000,White,Mumbai,"Reverse Camera, Alloy Wheels",https://picsum.photos/seed/i20-front/1200/800,https://picsum.photos/seed/i20-rear/1200/800
+Honda City VX,Honda,City,2017,Petrol,Automatic,71200,1st Owner,800000,7,745000,Grey,Bengaluru,"Sunroof, Cruise Control",https://picsum.photos/seed/city-front/1200/800,https://picsum.photos/seed/city-cabin/1200/800
+Mahindra Thar LX,Mahindra,Thar,2021,Diesel,Automatic,27800,1st Owner,1580000,4,1520000,Red,Jaipur,"4x4, Hard Top",https://picsum.photos/seed/thar-front/1200/800,https://picsum.photos/seed/thar-rear/1200/800

@@ -156,7 +156,17 @@ export async function generateReply(
       inventoryInfo += '\nAVAILABLE PRODUCTS FROM INVENTORY (REAL DATA — use this!):\n';
       items.forEach((item, i) => {
         const price = item.price ? (item.price >= 100000 ? `${(item.price / 100000).toFixed(1)}L` : `${item.price}`) : 'Price on request';
-        const attrs = item.attributes ? Object.entries(item.attributes).map(([k, v]) => `${k}: ${v}`).join(', ') : '';
+        const attrs = item.attributes
+          ? Object.entries(item.attributes)
+              .filter(([k, v]) => {
+                if (v === null || v === undefined) return false;
+                if (typeof v === 'string' && /^https?:\/\//i.test(v)) return false;
+                if (/(image|img|photo|pic)/i.test(k)) return false;
+                return true;
+              })
+              .map(([k, v]) => `${k}: ${v}`)
+              .join(', ')
+          : '';
         inventoryInfo += `${i + 1}. ${item.item_name}${item.category ? ` (${item.category})` : ''} — ₹${price}, ${item.quantity} in stock${attrs ? `, ${attrs}` : ''}\n`;
       });
     }
@@ -202,7 +212,9 @@ RULES:
 12. For prices, use the format customers use: "5.5 lakh" not "550000"
 13. NEVER make up products. ONLY mention items listed in AVAILABLE PRODUCTS above.
 14. If no matching inventory found, say you'll check with the team.
-15. DO NOT repeat questions the customer already answered`;
+15. DO NOT repeat questions the customer already answered
+16. Keep tone respectful (use polite words like Ji where suitable).
+17. NEVER include raw image links/URLs in text replies.`;
 
   const historicalMessages = conversationHistory.slice(0, -1);
   const mappedMessages: any[] = [{ role: 'system', content: prompt }];
