@@ -91,7 +91,7 @@ export class BaileysAdapter {
     return { jid, customerName, customerPhone, text, timestamp };
   }
 
-  /** Send a message via Baileys (rate-limited) */
+  /** Send a text message via Baileys (rate-limited) */
   async sendMessage(userId: string, jid: string, text: string): Promise<boolean> {
     try {
       const socket = sessionManager.getSocket(userId);
@@ -108,6 +108,29 @@ export class BaileysAdapter {
       return true;
     } catch (err: any) {
       console.error(`❌ Send failed: ${err.message}`);
+      return false;
+    }
+  }
+
+  /** Send an image with caption via Baileys (rate-limited) */
+  async sendImage(userId: string, jid: string, imageUrl: string, caption?: string): Promise<boolean> {
+    try {
+      const socket = sessionManager.getSocket(userId);
+      if (!socket) {
+        console.error(`❌ No active socket for user ${userId.slice(0, 8)}`);
+        return false;
+      }
+
+      await rateLimiter.waitForSlot(userId);
+
+      await socket.sendMessage(jid, {
+        image: { url: imageUrl },
+        caption: caption || '',
+      });
+      console.log(`🖼️ [${userId.slice(0, 8)}] Image sent to ${jid.split('@')[0]}`);
+      return true;
+    } catch (err: any) {
+      console.error(`❌ Image send failed: ${err.message}`);
       return false;
     }
   }

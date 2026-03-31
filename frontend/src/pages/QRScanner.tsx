@@ -56,7 +56,7 @@ const QRScanner: React.FC = () => {
           if (backendStatus === 'no_session' && !isRecoveringSession.current) {
             isRecoveringSession.current = true;
             try {
-              await client.post('/sessions', { userId: user.id });
+              await client.post('/sessions', {});
             } finally {
               isRecoveringSession.current = false;
             }
@@ -109,7 +109,7 @@ const QRScanner: React.FC = () => {
     setQrCodeUrl(null);
     setStatus('scanning');
     try {
-      await client.post('/sessions', { userId: user.id });
+      await client.post('/sessions', {});
     } catch (err) {
       console.error('Failed to start session', err);
       setError('Failed to start session. Please try again.');

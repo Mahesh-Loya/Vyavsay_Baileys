@@ -1,7 +1,9 @@
 import Fastify from 'fastify';
+import helmet from '@fastify/helmet';
 import { config } from './config/environment.js';
 import corsPlugin from './plugins/cors-plugin.js';
 import supabasePlugin from './plugins/supabase-plugin.js';
+import authPlugin from './plugins/auth-plugin.js';
 import { healthRoutes } from './routes/health-routes.js';
 import { sessionRoutes } from './routes/session-routes.js';
 import { conversationRoutes } from './routes/conversation-routes.js';
@@ -14,14 +16,23 @@ import './services/baileys-adapter.js';
 
 const fastify = Fastify({
   logger: {
-    transport: { target: 'pino-pretty', options: { translateTime: 'HH:MM:ss', ignore: 'pid,hostname' } }
+    transport: config.NODE_ENV === 'development'
+      ? { target: 'pino-pretty', options: { translateTime: 'HH:MM:ss', ignore: 'pid,hostname' } }
+      : undefined,
   },
+  bodyLimit: 5 * 1024 * 1024, // 5MB max request body
 });
 
 async function main() {
+  // Security headers
+  await fastify.register(helmet, {
+    contentSecurityPolicy: false, // Disable CSP for API-only server
+  });
+
   // Register plugins
   await fastify.register(corsPlugin);
   await fastify.register(supabasePlugin);
+  await fastify.register(authPlugin);
 
   // Register routes
   await fastify.register(healthRoutes, { prefix: '/api' });
@@ -35,6 +46,13 @@ async function main() {
 
   const { knowledgeRoutes } = await import('./routes/knowledge-routes.js');
   await fastify.register(knowledgeRoutes, { prefix: '/api/knowledge' });
+
+  const { catalogRoutes, schemaRoutes } = await import('./routes/catalog-routes.js');
+  await fastify.register(catalogRoutes, { prefix: '/api/catalog' });
+  await fastify.register(schemaRoutes, { prefix: '/api/schema' });
+
+  const { fileRoutes } = await import('./routes/file-routes.js');
+  await fastify.register(fileRoutes, { prefix: '/api/files' });
 
   // Restore persisted Baileys sessions on startup (non-blocking)
   sessionManager.restoreAllSessions().catch(err => {
@@ -51,14 +69,14 @@ async function main() {
     await fastify.listen({ port: config.PORT, host: '0.0.0.0' });
     console.log(`\n🚀 Vyavsay Baileys API running on http://localhost:${config.PORT}`);
     console.log(`📡 Health: http://localhost:${config.PORT}/api/health`);
-    console.log(`📱 Sessions: http://localhost:${config.PORT}/api/sessions\n`);
+    console.log(`📱 Sessions: http://localhost:${config.PORT}/api/sessions`);
+    console.log(`🔒 Auth: Enabled | Helmet: Enabled | Env: ${config.NODE_ENV}\n`);
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);
   }
 }
 
-// Handle unhandled rejections to prevent silent crashes
 process.on('unhandledRejection', (err) => {
   console.error('⚠️ Unhandled Rejection:', err);
 });

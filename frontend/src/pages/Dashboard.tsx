@@ -39,7 +39,7 @@ const Dashboard: React.FC = () => {
       }
 
       const [statsRes, sessionsRes] = await Promise.all([
-        client.get(`/analytics?userId=${user?.id}`).catch(() => ({ data: {} })),
+        client.get('/analytics').catch(() => ({ data: {} })),
         client.get('/sessions').catch(() => ({ data: { sessions: [] } })),
       ]);
       setStats(statsRes.data);
@@ -175,7 +175,7 @@ const Dashboard: React.FC = () => {
               <span className="text-sm font-bold">Link WhatsApp</span>
             </button>
             <button 
-              onClick={() => navigate('/knowledge-base')}
+              onClick={() => navigate('/ai-brain')}
               className="flex flex-col items-center gap-4 p-6 bg-muted/30 border border-border/50 rounded-2xl hover:bg-muted/50 transition-all group"
             >
               <div className="p-3 bg-green-500/10 rounded-full group-hover:scale-110 transition-transform">

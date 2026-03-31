@@ -9,7 +9,7 @@ import Tasks from './pages/Tasks';
 import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
 import QRScanner from './pages/QRScanner';
-import KnowledgeBase from './pages/KnowledgeBase';
+import AIBrain from './pages/AIBrain';
 import Login from './pages/Login';
 import Onboarding from './pages/Onboarding';
 
@@ -48,7 +48,7 @@ const AppContent: React.FC = () => {
           <Route path="/conversations" element={<ProtectedRoute><Conversations /></ProtectedRoute>} />
           <Route path="/leads" element={<ProtectedRoute><Leads /></ProtectedRoute>} />
           <Route path="/tasks" element={<ProtectedRoute><Tasks /></ProtectedRoute>} />
-          <Route path="/knowledge-base" element={<ProtectedRoute><KnowledgeBase /></ProtectedRoute>} />
+          <Route path="/ai-brain" element={<ProtectedRoute><AIBrain /></ProtectedRoute>} />
           <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
           

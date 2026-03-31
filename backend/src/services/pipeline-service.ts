@@ -1,24 +1,40 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { analyzeMessage, generateReply, generateSummary } from './ai-router.js';
+import { analyzeMessage, generateReply, generateSummary, AnalysisResult } from './ai-router.js';
 import { RagService } from './rag-service.js';
+import { CatalogService } from './catalog-service.js';
 import { baileysAdapter } from './baileys-adapter.js';
 import { reminderService } from './reminder-service.js';
 import { createClient } from '@supabase/supabase-js';
 import { config } from '../config/environment.js';
 
+/** Intents that should trigger inventory search */
+const INVENTORY_INTENTS = [
+  'inventory_inquiry',
+  'inventory_browse',
+  'inventory_compare',
+  'pricing_inquiry',
+  'ready_to_buy',
+];
+
 /**
  * PipelineService — the AI orchestrator.
- * Flow: Store → Analyze → Score Lead → Extract Tasks → Auto-Reply
+ * Flow: Store → Analyze → Route (Inventory or Knowledge) → Score Lead → Extract Tasks → Auto-Reply
  */
 export class PipelineService {
   private rag: RagService;
+  private catalog: CatalogService;
 
   constructor(private supabase: SupabaseClient) {
     this.rag = new RagService(supabase);
+    this.catalog = new CatalogService(supabase, this.rag);
   }
 
   getRagService(): RagService {
     return this.rag;
+  }
+
+  getCatalogService(): CatalogService {
+    return this.catalog;
   }
 
   async processIncomingMessage(
@@ -29,7 +45,7 @@ export class PipelineService {
     messageText: string
   ): Promise<{ success: boolean; autoReplied: boolean; analysis: any }> {
 
-    // 1. Fetch or create user (for hackathon, auto-create if not exists)
+    // 1. Fetch or create user
     let { data: user } = await this.supabase
       .from('wb_users')
       .select('*')
@@ -37,7 +53,6 @@ export class PipelineService {
       .single();
 
     if (!user) {
-      // Auto-create user for demo purposes
       const { data: newUser } = await this.supabase
         .from('wb_users')
         .insert({
@@ -112,7 +127,7 @@ export class PipelineService {
       (m: any) => `${m.sender}: ${m.content}`
     );
 
-    // 5. Run AI analysis
+    // 5. Run AI analysis (now includes entity extraction)
     const analysis = await analyzeMessage(messageText, historyStrings, {
       business_name: user.business_name || '',
       industry: user.industry || '',
@@ -120,7 +135,10 @@ export class PipelineService {
     });
 
     console.log(`\n[Pipeline] AI Analysis for "${messageText.slice(0, 50)}...":`);
-    console.log(JSON.stringify(analysis, null, 2));
+    console.log(`  Intent: ${analysis.intent} | Score: ${analysis.lead_score} | QueryType: ${analysis.query_type}`);
+    if (analysis.entities) {
+      console.log(`  Entities:`, JSON.stringify(analysis.entities));
+    }
 
     // 6. Update message with detected intent
     await this.supabase
@@ -132,36 +150,7 @@ export class PipelineService {
       .limit(1);
 
     // 7. Create or update lead
-    const { data: existingLead } = await this.supabase
-      .from('wb_leads')
-      .select('*')
-      .eq('conversation_id', conversation.id)
-      .single();
-
-    if (existingLead) {
-      const scorePriority: Record<string, number> = { high: 3, medium: 2, low: 1 };
-      if ((scorePriority[analysis.lead_score] || 0) > (scorePriority[existingLead.score] || 0)) {
-        await this.supabase
-          .from('wb_leads')
-          .update({
-            score: analysis.lead_score,
-            intent: analysis.intent,
-            summary: analysis.summary_update,
-            customer_name: customerName,
-          })
-          .eq('id', existingLead.id);
-      }
-    } else {
-      await this.supabase.from('wb_leads').insert({
-        user_id: userId,
-        conversation_id: conversation.id,
-        customer_name: customerName,
-        score: analysis.lead_score,
-        stage: 'new',
-        intent: analysis.intent,
-        summary: analysis.summary_update,
-      });
-    }
+    await this.upsertLead(userId, conversation.id, customerName, analysis);
 
     // 8. Create extracted tasks
     for (const task of analysis.tasks) {
@@ -174,7 +163,7 @@ export class PipelineService {
       });
     }
 
-    // 8.5. Schedule appointment reminders (from n8n workflow insight)
+    // 8.5. Schedule appointment reminders
     if (analysis.appointment?.proposed_time_iso) {
       const serviceName = analysis.appointment.service || 'General Service';
       await this.supabase.from('wb_tasks').insert({
@@ -185,22 +174,11 @@ export class PipelineService {
         is_completed: false,
       });
 
-      // Schedule WhatsApp reminders
-      reminderService.scheduleReminders(
-        userId,
-        customerJid,
-        customerName,
-        serviceName,
-        analysis.appointment.proposed_time_iso
-      );
+      reminderService.scheduleReminders(userId, customerJid, customerName, serviceName, analysis.appointment.proposed_time_iso);
 
-      historyStrings.push(
-        `System: Appointment for ${analysis.appointment.proposed_time_iso} for ${serviceName} has been booked! Confirm warmly.`
-      );
+      historyStrings.push(`System: Appointment for ${analysis.appointment.proposed_time_iso} for ${serviceName} has been booked! Confirm warmly.`);
     } else if (analysis.appointment && !analysis.appointment.proposed_time_iso) {
-      historyStrings.push(
-        `System: Customer wants to book but hasn't specified time. Ask for preferred date and time.`
-      );
+      historyStrings.push(`System: Customer wants to book but hasn't specified time. Ask for preferred date and time.`);
     }
 
     // 9. Update conversation summary
@@ -212,21 +190,71 @@ export class PipelineService {
         .eq('id', conversation.id);
     }
 
-    // 10. Auto-reply decision
+    // ──────────────────────────────────────────────
+    // 10. SMART CONTEXT FETCHING
+    // Route to inventory OR knowledge base based on intent
+    // ──────────────────────────────────────────────
+
+    let knowledgeChunks: string[] = [];
+    let inventoryContext: { items: any[]; soldItems?: any[]; alternatives?: any[] } | null = null;
+
+    const isInventoryQuery = INVENTORY_INTENTS.includes(analysis.intent) || analysis.query_type !== 'general';
+
+    if (isInventoryQuery && analysis.entities) {
+      // INVENTORY PATH — search catalog with extracted entities
+      console.log(`  [Pipeline] → Routing to INVENTORY search`);
+
+      const result = await this.catalog.searchWithAlternatives(userId, messageText, {
+        product_name: analysis.entities.product_name || undefined,
+        category: analysis.entities.category || analysis.entities.brand || undefined,
+        price_min: analysis.entities.price_min || undefined,
+        price_max: analysis.entities.price_max || undefined,
+        attributes: analysis.entities.attributes || undefined,
+      });
+
+      const available = result.exact.filter(i => i.quantity > 0);
+      const sold = result.exact.filter(i => i.quantity <= 0);
+
+      inventoryContext = {
+        items: available,
+        soldItems: sold.length > 0 ? sold : undefined,
+        alternatives: result.alternatives.length > 0 ? result.alternatives : undefined,
+      };
+
+      console.log(`  [Pipeline] Inventory results: ${available.length} available, ${sold.length} sold, ${result.alternatives.length} alternatives`);
+
+      // If no inventory results, also search knowledge base as fallback
+      if (available.length === 0 && sold.length === 0) {
+        console.log(`  [Pipeline] → No inventory match, falling back to knowledge base`);
+        knowledgeChunks = await this.rag.searchKnowledge(userId, messageText);
+      }
+    } else {
+      // KNOWLEDGE PATH — general question, search text knowledge base
+      console.log(`  [Pipeline] → Routing to KNOWLEDGE BASE search`);
+      knowledgeChunks = await this.rag.searchKnowledge(userId, messageText);
+    }
+
+    // ──────────────────────────────────────────────
+    // 11. AUTO-REPLY DECISION
+    // ──────────────────────────────────────────────
+
     let autoReplied = false;
 
-    if (
+    const autoReplyIntents = [
+      'greeting', 'general_question', 'pricing_inquiry', 'service_inquiry',
+      'inventory_inquiry', 'inventory_browse',
+    ];
+
+    const shouldReply =
       user.auto_reply_enabled &&
       !conversation.ai_paused &&
       analysis.should_auto_reply &&
       (analysis.confidence >= (user.ai_confidence_threshold || 0.75) ||
-        ['greeting', 'general_question', 'pricing_inquiry', 'service_inquiry'].includes(analysis.intent)) &&
-      !analysis.escalation_reason
-    ) {
-      // Get RAG context
-      const knowledgeChunks = await this.rag.searchKnowledge(userId, messageText);
+        autoReplyIntents.includes(analysis.intent)) &&
+      !analysis.escalation_reason;
 
-      // Generate reply
+    if (shouldReply) {
+      // Generate reply with both inventory and knowledge context
       const replyText = await generateReply(
         messageText,
         historyStrings,
@@ -236,10 +264,26 @@ export class PipelineService {
           industry: user.industry || '',
           services: user.services || [],
         },
-        analysis.language_detected
+        analysis.language_detected,
+        inventoryContext
       );
 
-      // Send via Baileys
+      // Send product image FIRST if we have a specific match with images
+      if (inventoryContext?.items && inventoryContext.items.length <= 3) {
+        for (const item of inventoryContext.items) {
+          const images = Array.isArray(item.images) ? item.images : [];
+          const primaryImage = images.sort((a: any, b: any) => (a.order || 0) - (b.order || 0))[0];
+          if (primaryImage?.url) {
+            const price = item.price
+              ? (item.price >= 100000 ? `₹${(item.price / 100000).toFixed(1)}L` : `₹${item.price}`)
+              : '';
+            const caption = `${item.item_name}${price ? ` — ${price}` : ''}`;
+            await baileysAdapter.sendImage(userId, customerJid, primaryImage.url, caption);
+          }
+        }
+      }
+
+      // Send text reply
       const sent = await baileysAdapter.sendMessage(userId, customerJid, replyText);
       if (sent) {
         await this.supabase.from('wb_messages').insert({
@@ -264,6 +308,45 @@ export class PipelineService {
     }
 
     return { success: true, autoReplied, analysis };
+  }
+
+  /** Upsert lead — create new or upgrade score if higher */
+  private async upsertLead(
+    userId: string,
+    conversationId: string,
+    customerName: string,
+    analysis: AnalysisResult
+  ): Promise<void> {
+    const { data: existingLead } = await this.supabase
+      .from('wb_leads')
+      .select('*')
+      .eq('conversation_id', conversationId)
+      .single();
+
+    if (existingLead) {
+      const scorePriority: Record<string, number> = { high: 3, medium: 2, low: 1 };
+      if ((scorePriority[analysis.lead_score] || 0) > (scorePriority[existingLead.score] || 0)) {
+        await this.supabase
+          .from('wb_leads')
+          .update({
+            score: analysis.lead_score,
+            intent: analysis.intent,
+            summary: analysis.summary_update,
+            customer_name: customerName,
+          })
+          .eq('id', existingLead.id);
+      }
+    } else {
+      await this.supabase.from('wb_leads').insert({
+        user_id: userId,
+        conversation_id: conversationId,
+        customer_name: customerName,
+        score: analysis.lead_score,
+        stage: 'new',
+        intent: analysis.intent,
+        summary: analysis.summary_update,
+      });
+    }
   }
 }
 

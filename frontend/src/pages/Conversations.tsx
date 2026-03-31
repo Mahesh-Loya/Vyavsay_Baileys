@@ -39,7 +39,7 @@ const Conversations: React.FC = () => {
 
   const fetchConversations = async () => {
     try {
-      const res = await client.get(`/conversations?userId=${user?.id}`);
+      const res = await client.get('/conversations');
       setConversations(res.data.conversations || []);
     } catch (err) {
       console.error('Failed to fetch conversations', err);
@@ -73,9 +73,7 @@ const Conversations: React.FC = () => {
 
     try {
       await client.post(`/conversations/${selectedConvo.id}/messages`, {
-        sender: 'business_owner',
         content: replyText,
-        userId: user?.id
       });
       
       const newMessage = {

@@ -1,47 +1,48 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
+import { validate, userUpdate } from '../utils/validation.js';
 
 export const userRoutes: FastifyPluginAsync = async (server: FastifyInstance) => {
 
-  /** Get user profile/settings (Auto-create if missing) */
   server.get('/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
+    if (id !== request.userId) return reply.status(403).send({ error: 'Forbidden' });
 
     let { data, error } = await server.supabase
       .from('wb_users')
       .select('*')
-      .eq('id', id)
+      .eq('id', request.userId)
       .single();
 
     if (error && error.code === 'PGRST116') {
-      // Not found, create it
       const { data: newUser, error: createError } = await server.supabase
         .from('wb_users')
-        .insert({ id })
+        .insert({ id: request.userId })
         .select()
         .single();
-      
-      if (createError) return reply.status(500).send({ error: createError.message });
+      if (createError) return reply.status(500).send({ error: 'Failed to create user profile' });
       data = newUser;
     } else if (error) {
-      return reply.status(500).send({ error: error.message });
+      return reply.status(500).send({ error: 'Failed to fetch user profile' });
     }
 
     return reply.send({ user: data });
   });
 
-  /** Update user settings */
   server.patch('/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
-    const body = request.body as any;
+    if (id !== request.userId) return reply.status(403).send({ error: 'Forbidden' });
+
+    const updates = validate(userUpdate, request.body, reply);
+    if (!updates) return;
 
     const { data, error } = await server.supabase
       .from('wb_users')
-      .update(body)
-      .eq('id', id)
+      .update(updates)
+      .eq('id', request.userId)
       .select()
       .single();
 
-    if (error) return reply.status(500).send({ error: error.message });
+    if (error) return reply.status(500).send({ error: 'Failed to update user profile' });
     return reply.send({ user: data });
   });
 };
