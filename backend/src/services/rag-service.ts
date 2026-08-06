@@ -3,12 +3,19 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { config } from '../config/environment.js';
 import crypto from 'crypto';
 
+// Embeddings run on Jina, not Gemini — Gemini's free-tier quota (20 requests/day/model)
+// is too tight to carry both chat and embedding traffic; Jina's free tier (1M tokens/month)
+// has far more headroom, and this endpoint is OpenAI-compatible too.
 const openai = new OpenAI({
-  baseURL: 'https://models.inference.ai.azure.com',
-  apiKey: config.GITHUB_PAT,
+  baseURL: 'https://api.jina.ai/v1',
+  apiKey: config.JINA_API_KEY,
 });
 
-const EMBEDDING_MODEL = 'text-embedding-3-small';
+const EMBEDDING_MODEL = 'jina-embeddings-v4';
+// wb_knowledge_base/wb_catalog_items columns are VECTOR(1536) (sized for OpenAI's
+// text-embedding-3-small). Jina v4's native output is 2048-dim but supports a
+// `dimensions` param to truncate to match, so no DB migration is needed.
+const EMBEDDING_DIMENSIONS = 1536;
 const CHUNK_SIZE = 200;       // words per chunk (was 500 — too large, reduces precision)
 const CHUNK_OVERLAP = 40;     // 20% overlap (was 50/500 = 10% — too little context carryover)
 const SIMILARITY_THRESHOLD = 0.4;  // was 0.1 — way too low, returned noise
@@ -96,6 +103,7 @@ export class RagService {
       const result = await openai.embeddings.create({
         model: EMBEDDING_MODEL,
         input: text,
+        dimensions: EMBEDDING_DIMENSIONS,
       });
       return result.data[0].embedding;
     } catch (err) {
@@ -120,10 +128,13 @@ export class RagService {
         const result = await openai.embeddings.create({
           model: EMBEDDING_MODEL,
           input: batch,
+          dimensions: EMBEDDING_DIMENSIONS,
         });
 
-        // OpenAI returns embeddings in same order as input
-        const sorted = result.data.sort((a, b) => a.index - b.index);
+        // Defends against a missing `index` on any future provider swap (seen on
+        // Gemini's compat layer, which omits it for position 0) — NaN from `undefined - n`
+        // would otherwise leave sort order unspecified.
+        const sorted = result.data.sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
         allEmbeddings.push(...sorted.map(d => d.embedding));
       }
 

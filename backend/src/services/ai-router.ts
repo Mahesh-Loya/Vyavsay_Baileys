@@ -3,12 +3,25 @@ import { config } from '../config/environment.js';
 import type { BaseDomain } from '../domains/types.js';
 import { getDomain } from '../domains/domain-router.js';
 
+// Text (analysis/reply/summary/follow-up/walk-in extraction) runs on Groq — free tier
+// has real headroom, unlike Gemini's 20-requests/day/model cap. Groq has no vision model,
+// so car-photo identification stays on Gemini specifically (see identifyCarFromImage).
 const openai = new OpenAI({
-  baseURL: 'https://models.inference.ai.azure.com',
-  apiKey: config.GITHUB_PAT,
+  baseURL: 'https://api.groq.com/openai/v1',
+  apiKey: config.GROQ_API_KEY,
 });
 
-const MODEL = process.env.AI_MODEL || 'gpt-4o-mini';
+const geminiClient = new OpenAI({
+  baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+  apiKey: config.GEMINI_API_KEY,
+});
+
+const MODEL = process.env.AI_MODEL || 'llama-3.3-70b-versatile';
+const VISION_MODEL = process.env.AI_VISION_MODEL || 'gemini-flash-latest';
+// Gemini's OpenAI-compat layer runs "thinking" by default, which silently eats into
+// max_tokens and can truncate JSON responses before any visible content is emitted.
+// Groq rejects this field outright, so it's only ever passed to geminiClient calls.
+const GEMINI_REASONING_EFFORT = 'low';
 const ANALYSIS_TIMEOUT_MS = 20000;
 const REPLY_TIMEOUT_MS = 25000;
 const SUMMARY_TIMEOUT_MS = 12000;
@@ -90,7 +103,12 @@ export async function analyzeMessage(
     const response = await withTimeout(
       openai.chat.completions.create({
         model: MODEL,
-        messages: [{ role: 'system', content: prompt }],
+        // Gemini's OpenAI-compat layer rejects a request with no non-system turn
+        // ("contents is not specified"), so the customer message is repeated as a user turn.
+        messages: [
+          { role: 'system', content: prompt },
+          { role: 'user', content: customerMessage },
+        ],
         response_format: { type: 'json_object' },
         ...d.llmParams.analysis,
       }),
@@ -242,10 +260,13 @@ export async function generateSummary(messages: string[], domain?: BaseDomain): 
     const response = await withTimeout(
       openai.chat.completions.create({
         model: MODEL,
-        messages: [{
-          role: 'system',
-          content: `Summarize this business conversation in 1-2 sentences. Focus on: what the customer wants, key decisions, pending actions.\n\nMessages:\n${messages.join('\n')}\n\nSummary:`,
-        }],
+        messages: [
+          {
+            role: 'system',
+            content: `Summarize this business conversation in 1-2 sentences. Focus on: what the customer wants, key decisions, pending actions.\n\nMessages:\n${messages.join('\n')}`,
+          },
+          { role: 'user', content: 'Summary:' },
+        ],
         ...d.llmParams.summary,
       }),
       SUMMARY_TIMEOUT_MS,
@@ -281,7 +302,10 @@ export async function generateFollowUp(
     const response = await withTimeout(
       openai.chat.completions.create({
         model: MODEL,
-        messages: [{ role: 'system', content: prompt }],
+        messages: [
+          { role: 'system', content: prompt },
+          { role: 'user', content: 'Write the follow-up message.' },
+        ],
         ...d.llmParams.followUp,
       }),
       FOLLOW_UP_TIMEOUT_MS,
@@ -307,7 +331,7 @@ export interface CarIdentification {
 
 const IMAGE_TIMEOUT_MS = 15000;
 
-/** Identify a car from a base64-encoded image using GPT-4o Vision */
+/** Identify a car from a base64-encoded image using Gemini Vision (Groq has no vision model) */
 export async function identifyCarFromImage(
   base64Image: string,
   mimetype: string
@@ -324,8 +348,9 @@ export async function identifyCarFromImage(
 
   try {
     const response = await withTimeout(
-      openai.chat.completions.create({
-        model: 'gpt-4o',
+      geminiClient.chat.completions.create({
+        model: VISION_MODEL,
+        reasoning_effort: GEMINI_REASONING_EFFORT,
         messages: [
           {
             role: 'user',
@@ -354,7 +379,7 @@ Return JSON with these fields:
           },
         ],
         response_format: { type: 'json_object' },
-        max_tokens: 250,
+        max_tokens: 400,
         temperature: 0.2,
       }),
       IMAGE_TIMEOUT_MS,
@@ -435,9 +460,8 @@ function extractNameFromTranscript(transcript: string): string | undefined {
  * regex-based phone fallback for the common case where digits get garbled.
  */
 export async function extractWalkInFromTranscript(transcript: string): Promise<WalkInExtraction> {
-  // Single system-message approach — same pattern as analyzeMessage() which is proven
-  // to work on the GitHub Models endpoint. Few-shot via alternating user/assistant
-  // messages was causing the API to throw (endpoint limitation).
+  // Few-shot examples are folded into the system prompt rather than alternating
+  // user/assistant turns — that pattern was causing the API to throw (endpoint limitation).
   const systemPrompt = `You extract structured walk-in customer data from an Indian salesperson's voice note.
 The business could be a car showroom, appliance store, jewelry shop, etc.
 Transcripts mix English, Hindi, Hinglish, and Marathi.
@@ -470,10 +494,13 @@ ${transcript}`;
     const completion = await withTimeout(
       openai.chat.completions.create({
         model: MODEL,
-        messages: [{ role: 'system', content: systemPrompt }],
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: 'Extract the JSON now.' },
+        ],
         response_format: { type: 'json_object' },
         temperature: 0,
-        max_tokens: 300,
+        max_tokens: 500,
       }),
       15_000,
       'walk-in extraction',

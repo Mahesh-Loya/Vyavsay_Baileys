@@ -14,8 +14,16 @@ export const config = {
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
   SUPABASE_STORAGE_BUCKET: process.env.SUPABASE_STORAGE_BUCKET || 'catalog-images',
 
-  // AI — GPT-4o via Azure
+  // AI — GitHub Models (RETIRED July 30, 2026 — GITHUB_PAT kept only so old .env files don't break boot)
   GITHUB_PAT: process.env.GITHUB_PAT || '',
+
+  // AI — Gemini, vision only (car-photo identification) — Groq has no vision model.
+  // Text generation runs on Groq instead: Gemini's free tier (20 requests/day/model) is
+  // too tight to also carry chat volume.
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
+
+  // AI — Jina, embeddings only (RAG/catalog search) — same reasoning as above.
+  JINA_API_KEY: process.env.JINA_API_KEY || '',
 
   // WhatsApp Cloud API (Meta)
   META_APP_SECRET: process.env.META_APP_SECRET || '',
@@ -48,7 +56,7 @@ export const config = {
 };
 
 // Validate critical env vars
-const required = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'GITHUB_PAT'];
+const required = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'GROQ_API_KEY', 'GEMINI_API_KEY', 'JINA_API_KEY'];
 for (const key of required) {
   if (!config[key as keyof typeof config]) {
     console.error(`❌ Missing required env var: ${key}`);

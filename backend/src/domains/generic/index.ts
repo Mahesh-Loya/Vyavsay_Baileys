@@ -333,9 +333,9 @@ INSTRUCTIONS:
   // ─── LLM Parameters (currently not set — using defaults) ──
   llmParams: {
     analysis: { temperature: 0.3, max_tokens: 500 },
-    reply: { temperature: 0.7, max_tokens: 200, frequency_penalty: 0.3 },
-    summary: { temperature: 0.3, max_tokens: 150 },
-    followUp: { temperature: 0.7, max_tokens: 100 },
+    reply: { temperature: 0.7, max_tokens: 800, frequency_penalty: 0.3 },
+    summary: { temperature: 0.3, max_tokens: 500 },
+    followUp: { temperature: 0.7, max_tokens: 800 },
   },
 
   // ─── Fallback Messages ────────────────────────────────────
