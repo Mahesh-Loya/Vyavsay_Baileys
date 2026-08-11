@@ -68,9 +68,9 @@
 |--------------------|-----------------------------------------------------|
 | **Frontend**       | React 18, Vite 6, TypeScript, Tailwind CSS, Framer Motion |
 | **Backend**        | Fastify 5, TypeScript, Node 20                      |
-| **WhatsApp**       | @whiskeysockets/baileys v7 rc9                      |
-| **AI/LLM**        | GPT-4o-mini via GitHub Models (Azure OpenAI endpoint)|
-| **Embeddings**     | OpenAI text-embedding-3-small (1536 dimensions)     |
+| **WhatsApp**       | Official Meta WhatsApp Business Cloud API (webhook-based) — *this doc predates that migration; see PROJECT_HANDOFF.md §2. Originally @whiskeysockets/baileys v7 rc9.* |
+| **AI/LLM**        | Groq (`llama-3.3-70b-versatile`) for text, Gemini (`gemini-flash-latest`) for vision — *originally GPT-4o-mini via GitHub Models, which GitHub fully retired 2026-07-30; see PROJECT_HANDOFF.md §3/gotcha #10.* |
+| **Embeddings**     | Jina `jina-embeddings-v4`, truncated to 1536 dimensions — *originally OpenAI text-embedding-3-small via GitHub Models* |
 | **Database**       | Supabase PostgreSQL + pgvector                      |
 | **Auth**           | Supabase Auth (JWT, email/password)                 |
 | **Storage**        | Supabase Storage (catalog images)                   |
@@ -521,13 +521,21 @@ wb_users (1)
 
 ## 8. AI & Chatbot Engine
 
-### LLM: GPT-4o-mini via Azure OpenAI (GitHub Models endpoint)
+### LLM: Groq for text, Gemini for vision
 
 ```
-Base URL: https://models.inference.ai.azure.com
-API Key: GITHUB_PAT (GitHub Personal Access Token)
-Model: gpt-4o-mini (configurable via AI_MODEL env var)
+Text (analysis/reply/summary/follow-up):
+  Base URL: https://api.groq.com/openai/v1
+  API Key: GROQ_API_KEY
+  Model: llama-3.3-70b-versatile (configurable via AI_MODEL env var)
+
+Vision (car-photo identification — Groq has no vision model):
+  Base URL: https://generativelanguage.googleapis.com/v1beta/openai/
+  API Key: GEMINI_API_KEY
+  Model: gemini-flash-latest (configurable via AI_VISION_MODEL env var)
 ```
+
+> **Historical note:** this ran on `GPT-4o-mini via Azure OpenAI (GitHub Models endpoint)` — base URL `https://models.inference.ai.azure.com`, key `GITHUB_PAT` — until GitHub fully retired GitHub Models on 2026-07-30 (playground, model catalog, inference API, and BYOK all shut down permanently, not a rate limit or expired token). Migrated 2026-08-06. Full story in `PROJECT_HANDOFF.md` gotcha #10.
 
 ### Core AI Functions
 
@@ -573,7 +581,7 @@ Model: gpt-4o-mini (configurable via AI_MODEL env var)
 
 ### RAG (Retrieval-Augmented Generation)
 
-- **Embedding Model**: text-embedding-3-small (OpenAI)
+- **Embedding Model**: jina-embeddings-v4 (Jina), truncated to 1536 dimensions — *originally text-embedding-3-small (OpenAI) via GitHub Models, retired 2026-07-30*
 - **Chunking**: 200 words per chunk, 40-word overlap (20%)
 - **Deduplication**: SHA256 content hash
 - **Vector Storage**: Supabase pgvector
@@ -707,8 +715,9 @@ Every database query filters by `request.userId` - no user can access another us
 
 **Backend (Required)**:
 ```
-SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, GITHUB_PAT
+SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, GROQ_API_KEY, GEMINI_API_KEY, JINA_API_KEY
 ```
+*(`GITHUB_PAT` was required here before the 2026-08-06 AI provider migration — see PROJECT_HANDOFF.md gotcha #10.)*
 
 **Backend (Optional)**:
 ```
